@@ -261,6 +261,8 @@ def require_role(role):
                 cred = Credential.get(cred_id)
                 try:
                     user_role = user_mod.current_role()
+                    admin_role = app.config['ADMIN_ROLE']
+
                     role_name_rw = app.config['ROLE_RW_NAME'].lower()
                     role_name_r = app.config['ROLE_RO_NAME'].lower()
                     groups_rw = cred.metadata.get(role_name_rw)
@@ -273,23 +275,26 @@ def require_role(role):
                     if groups_rw is not None:
                         groups_rw = groups_rw.lower()
                         groups_rw = groups_rw.replace(' ', '').split(',')
-
+                        
                     if user_role is not None:
-                        if user_role == app.config['ADMIN_ROLE'].lower():
-                            return make_response(f(*args, **kwargs))
-                        elif role_name_rw in cred.metadata \
-                                or role_name_r in cred.metadata:
-                            if groups_rw and user_role in groups_rw:
+                        for check_role in user_role:
+                            check_role = check_role.lower()
+                            if admin_role in check_role :
                                 return make_response(f(*args, **kwargs))
-                            elif groups_r and user_role in groups_r \
-                                    and role == 'read_only':
-                                return make_response(f(*args, **kwargs))
-                            else:
-                                return jsonify({'error': 'Access denied'}), 403
+                            elif role_name_rw in cred.metadata \
+                                    or role_name_r in cred.metadata:
+                                if groups_rw and check_role in groups_rw:
+                                    return make_response(f(*args, **kwargs))
+                                elif groups_r and check_role in groups_r \
+                                        and role == 'read_only':
+                                    return make_response(f(*args, **kwargs))
+                                else:
+                                    pass
                         else:
-                            return jsonify({'error': 'Role not found'}), 403
+                            return jsonify({'error': 'Access Denied'}), 403
                     else:
                         return jsonify({'error': 'Role not set'}), 403
+                
                 except (NotAuthorized, AuthenticationError) as e:
                     logging.error(e)
                     return abort(403)
