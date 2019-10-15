@@ -261,7 +261,7 @@ def require_role(role):
                 cred = Credential.get(cred_id)
                 try:
                     user_role = user_mod.current_role()
-                    admin_role = app.config['ADMIN_ROLE']
+                    admin_role = app.config['ADMIN_ROLE'].lower()
 
                     role_name_rw = app.config['ROLE_RW_NAME'].lower()
                     role_name_r = app.config['ROLE_RO_NAME'].lower()
@@ -279,7 +279,7 @@ def require_role(role):
                     if user_role is not None:
                         for check_role in user_role:
                             check_role = check_role.lower()
-                            if admin_role in check_role :
+                            if admin_role in check_role:
                                 return make_response(f(*args, **kwargs))
                             elif role_name_rw in cred.metadata \
                                     or role_name_r in cred.metadata:

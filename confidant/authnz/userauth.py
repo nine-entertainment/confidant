@@ -132,10 +132,15 @@ class AbstractUserAuthenticator(object):
         return self.current_user()['last_name']
 
     def current_role(self):
+
+        role = self.current_user()['role']
+
         if not self.current_user()['role']:
             return '(not set)'
+        elif type(role) is str:
+            return [role]
         else:
-            return self.current_user()['role']
+            return role
 
     def redirect_to_index(self):
         return redirect(flask.url_for('index'))
