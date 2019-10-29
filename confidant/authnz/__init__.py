@@ -261,6 +261,7 @@ def require_role(role):
                 cred = Credential.get(cred_id)
                 try:
                     user_role = user_mod.current_role()
+                    current_user = user_mod.current_user()
                     role_name_rw = app.config['ROLE_RW_NAME'].lower()
                     role_name_r = app.config['ROLE_RO_NAME'].lower()
                     groups_rw = cred.metadata.get(role_name_rw)
@@ -274,6 +275,9 @@ def require_role(role):
                         groups_rw = groups_rw.lower()
                         groups_rw = groups_rw.replace(' ', '').split(',')
 
+                    if current_user is not None:
+                        if current_user['email'] == cred.modified_by:
+                            return make_response(f(*args, **kwargs))
                     if user_role is not None:
                         if user_role == app.config['ADMIN_ROLE'].lower():
                             return make_response(f(*args, **kwargs))
