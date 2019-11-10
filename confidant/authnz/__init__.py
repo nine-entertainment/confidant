@@ -283,13 +283,13 @@ def require_role(role):
                     if user_role is not None:
                         for check_role in user_role:
                             check_role = check_role.lower()
-                            if admin_role in check_role:
+                            if admin_role == check_role:
                                 return make_response(f(*args, **kwargs))
                             elif role_name_rw in cred.metadata \
                                     or role_name_r in cred.metadata:
-                                if groups_rw and check_role in groups_rw:
+                                if groups_rw and check_role == groups_rw:
                                     return make_response(f(*args, **kwargs))
-                                elif groups_r and check_role in groups_r \
+                                elif groups_r and check_role == groups_r \
                                         and role == 'read_only':
                                     return make_response(f(*args, **kwargs))
                                 else:
