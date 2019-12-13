@@ -287,10 +287,11 @@ def require_role(role):
                                 return make_response(f(*args, **kwargs))
                             elif role_name_rw in cred.metadata \
                                     or role_name_r in cred.metadata:
-                                if groups_rw and check_role == groups_rw:
+                                if isinstance(groups_rw, list) and check_role \
+                                        in groups_rw:
                                     return make_response(f(*args, **kwargs))
-                                elif groups_r and check_role == groups_r \
-                                        and role == 'read_only':
+                                elif isinstance(groups_r, list) and check_role \
+                                          in groups_r and role == 'read_only':
                                     return make_response(f(*args, **kwargs))
                                 else:
                                     pass
@@ -298,7 +299,7 @@ def require_role(role):
                             return jsonify({'error': 'Access Denied'}), 403
                     else:
                         return jsonify({'error': 'Role not set'}), 403
-                
+
                 except (NotAuthorized, AuthenticationError) as e:
                     logging.error(e)
                     return abort(403)
