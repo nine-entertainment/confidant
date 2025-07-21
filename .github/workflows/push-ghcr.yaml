@@ -2,10 +2,13 @@ name: Build and Push
 
 on:
   push:
-    branches: [ master ]
-    tags: [ 'v*.*.*' ]
+    branches: 
+      - master
+    tags: 
+      - 'v*.*.*'
   pull_request:
-    branches: [ master ]
+    branches: 
+      - master
 
 env:
   REGISTRY: ghcr.io
@@ -46,9 +49,9 @@ jobs:
         if: startsWith(env.LATEST_TAG, 'v')
         run: |
           latest_tag=${{ env.LATEST_TAG }}
-          major=${latest_tag:1:1}  # Get major version
-          minor=${latest_tag:3:1}   # Get minor version
-          patch=${latest_tag:5:1}   # Get patch version
+          major=${latest_tag:1:1} # Get major version
+          minor=${latest_tag:3:1}  # Get minor version
+          patch=${latest_tag:5:1}  # Get patch version
 
           if [ "$patch" -lt 9 ]; then
             patch=$((patch + 1))
@@ -85,7 +88,7 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}  # Ensure to include the valid tag
+          tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Create GitHub Release
