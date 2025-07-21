@@ -20,7 +20,7 @@ from confidant.services import (
     servicemanager,
     webhook,
 )
-from confidant.utils import maintenance, misc
+from confidant.utils import maintenance, misc, stats
 from confidant.utils.dynamodb import decode_last_evaluated_key
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,7 @@ def get_iam_roles_list():
 
 
 @blueprint.route('/v1/services', methods=['GET'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 def get_service_list():
     """
@@ -122,51 +123,54 @@ def get_service_list():
     :statuscode 200: Success
     :statuscode 403: Client does not have permissions to list services.
     """
-    if not acl_module_check(resource_type='service',
-                            action='list'):
-        msg = "{} does not have access to list services".format(
-            authnz.get_logged_in_user()
-        )
-        error_msg = {'error': msg}
-        return jsonify(error_msg), 403
+    with stats.timer('list_services'):
+        if not acl_module_check(resource_type='service',
+                                action='list'):
+            msg = "{} does not have access to list services".format(
+                authnz.get_logged_in_user()
+            )
+            error_msg = {'error': msg}
+            return jsonify(error_msg), 403
 
-    limit = request.args.get(
-        'limit',
-        default=None,
-        type=int,
-    )
-    page = request.args.get(
-        'page',
-        default=None,
-        type=str
-    )
+        limit = request.args.get(
+            'limit',
+            default=None,
+            type=int,
+        )
+        page = request.args.get(
+            'page',
+            default=None,
+            type=str
+        )
 
-    if page:
-        try:
-            page = decode_last_evaluated_key(page)
-        except Exception:
-            logger.exception('Failed to parse provided page')
-            return jsonify({'error': 'Failed to parse page'}), 400
+        if page:
+            try:
+                page = decode_last_evaluated_key(page)
+            except Exception:
+                logger.exception('Failed to parse provided page')
+                return jsonify({'error': 'Failed to parse page'}), 400
 
-    if limit:
-        results = Service.data_type_date_index.query(
-            'service',
-            scan_index_forward=False,
-            limit=limit,
-            last_evaluated_key=page,
-        )
-        services_response = ServicesResponse.from_services(
-            [result for result in results],
-            next_page=results.last_evaluated_key
-        )
-    else:
-        services_response = ServicesResponse.from_services(
-            Service.data_type_date_index.query('service'),
-        )
-    return services_response_schema.dumps(services_response)
+        if limit:
+            results = Service.data_type_date_index.query(
+                'service',
+                scan_index_forward=False,
+                limit=limit,
+                last_evaluated_key=page,
+            )
+            services_response = ServicesResponse.from_services(
+                [result for result in results],
+                next_page=results.last_evaluated_key
+            )
+        else:
+            services_response = ServicesResponse.from_services(
+                Service.data_type_date_index.query('service'),
+            )
+
+        return services_response_schema.dumps(services_response)
 
 
 @blueprint.route('/v1/services/<id>', methods=['GET'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 def get_service(id):
     '''
@@ -233,95 +237,107 @@ def get_service(id):
     :statuscode 403: Client does not have permissions to get the service ID
                      provided.
     '''
-    permissions = {
-        'metadata': False,
-        'get': False,
-        'update': False,
-    }
-    metadata_only = misc.get_boolean(request.args.get('metadata_only'))
-    logged_in_user = authnz.get_logged_in_user()
-    action = 'metadata' if metadata_only else 'get'
-    if action == 'metadata':
-        permissions['metadata'] = acl_module_check(
-            resource_type='service',
-            action='metadata',
-            resource_id=id,
-        )
-    elif action == 'get':
-        permissions['get'] = acl_module_check(
-            resource_type='service',
-            action='get',
-            resource_id=id,
-        )
-    if not permissions[action]:
-        msg = "{} does not have access to get service {}".format(
-            authnz.get_logged_in_user(),
-            id
-        )
-        error_msg = {'error': msg, 'reference': id}
-        logger.warning(msg)
-        return jsonify(error_msg), 403
+    with stats.timer('get_service_by_id'):
+        with stats.timer('get_service_by_id.acl_check_get_service'):
+            permissions = {
+                'metadata': False,
+                'get': False,
+                'update': False,
+            }
+            metadata_only = misc.get_boolean(request.args.get('metadata_only'))
+            logged_in_user = authnz.get_logged_in_user()
+            action = 'metadata' if metadata_only else 'get'
+            if action == 'metadata':
+                permissions['metadata'] = acl_module_check(
+                    resource_type='service',
+                    action='metadata',
+                    resource_id=id,
+                )
+            elif action == 'get':
+                permissions['get'] = acl_module_check(
+                    resource_type='service',
+                    action='get',
+                    resource_id=id,
+                )
+            if not permissions[action]:
+                msg = "{} does not have access to get service {}".format(
+                    authnz.get_logged_in_user(),
+                    id
+                )
+                error_msg = {'error': msg, 'reference': id}
+                logger.warning(msg)
+                return jsonify(error_msg), 403
 
-    logger.info(
-        'get_service called on id={} by user={} metadata_only={}'.format(
-            id,
-            logged_in_user,
-            metadata_only,
-        )
-    )
-    try:
-        service = Service.get(id)
-        if not authnz.service_in_account(service.account):
-            logger.warning(
-                'Authz failed for service {0} (wrong account).'.format(id)
+            logger.info(
+                f'get_service called on id={id} by '
+                f'user={logged_in_user} metadata_only={metadata_only}'
             )
-            msg = 'Authenticated user is not authorized.'
-            return jsonify({'error': msg}), 401
-    except DoesNotExist:
-        logger.warning('Item with id {0} does not exist.'.format(id))
-        return jsonify({}), 404
-    except Exception as e:
-        logger.warning('Exception occurred: {0}'.format(e))
-        raise e
-    if (service.data_type != 'service' and
-            service.data_type != 'archive-service'):
-        logger.warning('Item with id {0} is not a service.'.format(id))
-        return jsonify({}), 404
-    logger.debug('Authz succeeded for service {0}.'.format(id))
-    try:
-        credentials = credentialmanager.get_credentials(service.credentials)
-    except KeyError:
-        logger.exception('KeyError occurred in getting credentials')
-        return jsonify({'error': 'Decryption error.'}), 500
-    blind_credentials = credentialmanager.get_blind_credentials(
-        service.blind_credentials,
-    )
-    # TODO: this check can be expensive, so we're gating only to user auth.
-    # We should probably add an argument that opts in for permission hints,
-    # rather than always checking them.
-    if authnz.user_is_user_type('user'):
-        combined_cred_ids = (
-            list(service.credentials) + list(service.blind_credentials)
-        )
-        permissions['update'] = acl_module_check(
-            resource_type='service',
-            action='update',
-            resource_id=id,
-            kwargs={
-                'credential_ids': combined_cred_ids,
-            },
-        )
-    service_response = ServiceResponse.from_service_expanded(
-        service,
-        credentials=credentials,
-        blind_credentials=blind_credentials,
-        metadata_only=metadata_only,
-    )
-    service_response.permissions = permissions
-    return service_expanded_response_schema.dumps(service_response)
+
+        with stats.timer('get_service_by_id.db_get_service'):
+            try:
+                service = Service.get(id)
+                if not authnz.service_in_account(service.account):
+                    logger.warning(
+                        f'Authz failed for service {id} (wrong account).'
+                    )
+                    msg = 'Authenticated user is not authorized.'
+                    return jsonify({'error': msg}), 401
+            except DoesNotExist:
+                logger.warning(f'Item with id={id} does not exist.')
+                return jsonify({}), 404
+            except Exception as e:
+                logger.warning('Exception occurred: {0}'.format(e))
+                raise e
+
+        if (service.data_type != 'service' and
+                service.data_type != 'archive-service'):
+            logger.warning('Item with id {0} is not a service.'.format(id))
+            return jsonify({}), 404
+        logger.debug('Authz succeeded for service {0}.'.format(id))
+
+        with stats.timer('get_service_by_id.db_get_credentials'):
+            try:
+                credentials = \
+                    credentialmanager.get_credentials(service.credentials)
+            except KeyError:
+                logger.exception('KeyError occurred in getting credentials')
+                return jsonify({'error': 'Decryption error.'}), 500
+
+        with stats.timer('get_service_by_id.db_get_blind_credentials'):
+            blind_credentials = credentialmanager.get_blind_credentials(
+                service.blind_credentials,
+            )
+
+        with stats.timer('get_service_by_id.acl_check_update_service'):
+            # TODO: this check can be expensive, so we're gating
+            # only to user auth. We should probably add an argument that
+            # opts in for permission hints, rather than always checking them
+            if authnz.user_is_user_type('user'):
+                combined_cred_ids = (
+                    list(service.credentials) + list(service.blind_credentials)
+                )
+                permissions['update'] = acl_module_check(
+                    resource_type='service',
+                    action='update',
+                    resource_id=id,
+                    kwargs={
+                        'credential_ids': combined_cred_ids,
+                    },
+                )
+
+        with stats.timer('get_service_by_id.build_response'):
+            service_response = ServiceResponse.from_service_expanded(
+                service,
+                credentials=credentials,
+                blind_credentials=blind_credentials,
+                metadata_only=metadata_only,
+            )
+            service_response.permissions = permissions
+            return service_expanded_response_schema.dumps(service_response)
 
 
 @blueprint.route('/v1/archive/services/<id>', methods=['GET'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 def get_archive_service_revisions(id):
     """
@@ -402,6 +418,7 @@ def get_archive_service_revisions(id):
 
 
 @blueprint.route('/v1/archive/services', methods=['GET'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 def get_archive_service_list():
     """
@@ -480,6 +497,7 @@ def get_archive_service_list():
 
 
 @blueprint.route('/v1/services/<id>', methods=['PUT'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 @authnz.require_csrf_token
 @maintenance.check_maintenance_mode
@@ -640,6 +658,7 @@ def map_service_credentials(id):
     # credential IDs.
     filtered_credential_ids = [cred.id for cred in credentials]
     # Try to save to the archive
+
     try:
         Service(
             id='{0}-{1}'.format(id, revision),
@@ -650,7 +669,7 @@ def map_service_credentials(id):
             enabled=data.get('enabled'),
             revision=revision,
             modified_by=authnz.get_logged_in_user()
-        ).save(id__null=True)
+        ).save()
     except PutError as e:
         logger.error(e)
         return jsonify({'error': 'Failed to add service to archive.'}), 500
@@ -688,6 +707,7 @@ def map_service_credentials(id):
 
 
 @blueprint.route('/v1/services/<id>/<to_revision>', methods=['PUT'])
+@misc.prevent_xss_decorator
 @authnz.require_auth
 @authnz.require_csrf_token
 @maintenance.check_maintenance_mode
@@ -811,7 +831,7 @@ def revert_service_to_revision(id, to_revision):
             enabled=revert_service.enabled,
             revision=new_revision,
             modified_by=authnz.get_logged_in_user()
-        ).save(id__null=True)
+        ).save()
     except PutError as e:
         logger.error(e)
         return jsonify({'error': 'Failed to add service to archive.'}), 500

@@ -47,7 +47,7 @@ export DYNAMODB_TABLE='confidant-production'
 export DYNAMODB_CREATE_TABLE=true
 # Set the gevent resolver to ares; see:
 #   https://github.com/surfly/gevent/issues/468
-export GEVENT_RESOLVER='ares'
+# export GEVENT_RESOLVER='ares'
 # The KMS key used for at-rest encryption in DynamoDB.
 export KMS_MASTER_KEY='alias/confidant-production'
 # A long randomly generated string for CSRF protection.
@@ -531,7 +531,8 @@ request that could be general networking failures, attempting to avoid request
 pileups. If this setting is too aggressive, you can adjust it via:
 
 ```
-export PYNAMO_REQUEST_TIMEOUT_SECONDS=1
+export PYNAMO_CONNECT_TIMEOUT_SECONDS=1
+export PYNAMO_READ_TIMEOUT_SECONDS=1
 ```
 
 To avoid recreating connections to dynamodb on each request, we open a larger
