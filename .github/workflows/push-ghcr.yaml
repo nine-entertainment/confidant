@@ -1,45 +1,93 @@
 name: Build and Push
+
 on:
   push:
-    branches:
-      - master
-    tags:
-      - '*'
+    branches: [ master ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ master ]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push-image:
-    name: Build and push image to ghcr
-    runs-on: ubuntu-20.04
-
+  build:
+    runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # Grant permission to create tags/releases
       packages: write
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history including tags
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@3d58c274f17dffee475a5520cbe67f0a882c4dbb
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GH_PAT }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Check out existing tags
+        run: git fetch --tags
+
+      - name: Get latest tag
+        id: latest_tag
+        run: |
+          latest_tag=$(git describe --tags --abbrev=0)
+          echo "LATEST_TAG=${latest_tag}" >> $GITHUB_ENV
+          echo "Latest Tag: ${latest_tag}"
+
+      - name: Create new tag 
+        id: create_tag
+        if: startsWith(env.LATEST_TAG, 'v')
+        run: |
+          latest_tag=${{ env.LATEST_TAG }}
+          major=${latest_tag:1:1} # Get major version
+          minor=${latest_tag:3:1}  # Get minor version
+          patch=${latest_tag:5:1}  # Get patch version
+
+          if [ "$patch" -lt 9 ]; then
+            patch=$((patch + 1))
+          else
+            patch=0
+            if [ "$minor" -lt 9 ]; then
+              minor=$((minor + 1))
+            else
+              minor=0
+              major=$((major + 1))
+            fi
+          fi
+
+          new_tag="v$major.$minor.$patch"
+          echo "New Docker tag: $new_tag"
+
+          # Create and push new tag
+          git tag "${new_tag}"
+          git push origin "${new_tag}"
+
+          echo "NEW_TAG=${new_tag}" >> $GITHUB_ENV
+
+      - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        uses: docker/metadata-action@dbef88086f6cef02e264edb7dbf63250c17cef6c
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        uses: docker/build-push-action@9f6f8c940b91232557f8699b21341a08624a8dce
         with:
           context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Create GitHub Release
+        if: startsWith(env.LATEST_TAG, 'v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Set GH_TOKEN for `gh` CLI
+        run: |
+          gh release create "${{ env.NEW_TAG }}" --title "${{ env.NEW_TAG }}" --notes "Release of version ${{ env.NEW_TAG }}" || echo "gh CLI not installed"
