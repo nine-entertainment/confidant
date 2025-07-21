@@ -18,13 +18,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # Grant permission to create tags/releases
+      contents: write  # Grant permission to create tags/releases
       packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0     # Fetch all history including tags
+          fetch-depth: 0  # Fetch all history including tags
 
       - name: Log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'
@@ -67,12 +67,15 @@ jobs:
 
           new_tag="v$major.$minor.$patch"
           echo "New Docker tag: $new_tag"
-
+          
           # Create and push new tag
           git tag "${new_tag}"
           git push origin "${new_tag}"
 
-          echo "NEW_TAG=${new_tag}" >> $GITHUB_ENV  # Save the new tag to the environment
+          echo "NEW_TAG=${new_tag}" >> $GITHUB_ENV  # Save to environment
+
+      - name: Output New Tag
+        run: echo "New tag created: ${{ env.NEW_TAG }}"  # Debug output of the new tag
 
       - name: Extract Docker metadata
         id: meta
@@ -80,12 +83,18 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
+      - name: Debug Environment Variables
+        run: |
+          echo "REGISTRY is: ${{ env.REGISTRY }}"
+          echo "IMAGE_NAME is: ${{ env.IMAGE_NAME }}"
+          echo "NEW_TAG is: ${{ env.NEW_TAG }}"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@9f6f8c940b91232557f8699b21341a08624a8dce
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: ${{ steps.meta.outputs.tags }},${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.NEW_TAG }}  
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Create GitHub Release
