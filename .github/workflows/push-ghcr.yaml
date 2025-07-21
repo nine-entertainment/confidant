@@ -7,7 +7,7 @@ on:
     tags: 
       - 'v*.*.*'
   pull_request:
-    branches: 
+    branches:
       - master
 
 env:
@@ -18,13 +18,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Grant permission to create tags/releases
+      contents: write      # Grant permission to create tags/releases
       packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history including tags
+          fetch-depth: 0     # Fetch all history including tags
 
       - name: Log into registry ${{ env.REGISTRY }}
         if: github.event_name != 'pull_request'
@@ -49,9 +49,9 @@ jobs:
         if: startsWith(env.LATEST_TAG, 'v')
         run: |
           latest_tag=${{ env.LATEST_TAG }}
-          major=${latest_tag:1:1} # Get major version
-          minor=${latest_tag:3:1}  # Get minor version
-          patch=${latest_tag:5:1}  # Get patch version
+          major=${latest_tag:1:1}  # Get major version
+          minor=${latest_tag:3:1}   # Get minor version
+          patch=${latest_tag:5:1}    # Get patch version
 
           if [ "$patch" -lt 9 ]; then
             patch=$((patch + 1))
@@ -73,9 +73,6 @@ jobs:
           git push origin "${new_tag}"
 
           echo "NEW_TAG=${new_tag}" >> $GITHUB_ENV  # Save the new tag to the environment
-
-      - name: Output New Tag
-        run: echo "New tag created: ${{ env.NEW_TAG }}"  # Debug output
 
       - name: Extract Docker metadata
         id: meta
