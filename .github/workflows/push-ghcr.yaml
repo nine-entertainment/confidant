@@ -75,7 +75,7 @@ jobs:
           echo "NEW_TAG=${new_tag}" >> $GITHUB_ENV  # Save to environment
 
       - name: Output New Tag
-        run: echo "New tag created: ${{ env.NEW_TAG }}"  # Debug output of the new tag
+        run: echo "New tag created:" ${{ env.NEW_TAG }}
 
       - name: Extract Docker metadata
         id: meta
